@@ -61,45 +61,45 @@ contract AaveLoop is ImmutableOwnable {
     /**
      * @return total supply balance in ASSET
      */
-    function getSupplyBalance() public view returns (uint256) {
-        (uint256 totalCollateralETH, , , , , ) = getPositionData();
+    function getSupplyBalance(address user) public view returns (uint256) {
+        (uint256 totalCollateralETH, , , , , ) = getPositionData(user);
         return (totalCollateralETH * (10**ASSET.decimals())) / getAssetPrice();
     }
 
     /**
      * @return total borrow balance in ASSET
      */
-    function getBorrowBalance() public view returns (uint256) {
-        (, uint256 totalDebtETH, , , , ) = getPositionData();
+    function getBorrowBalance(address user) public view returns (uint256) {
+        (, uint256 totalDebtETH, , , , ) = getPositionData(user);
         return (totalDebtETH * (10**ASSET.decimals())) / getAssetPrice();
     }
 
     /**
      * @return available liquidity in ASSET
      */
-    function getLiquidity() public view returns (uint256) {
-        (, , uint256 availableBorrowsETH, , , ) = getPositionData();
+    function getLiquidity(address user) public view returns (uint256) {
+        (, , uint256 availableBorrowsETH, , , ) = getPositionData(user);
         return (availableBorrowsETH * (10**ASSET.decimals())) / getAssetPrice();
     }
 
     /**
      * @return ASSET balanceOf(this)
      */
-    function getAssetBalance() public view returns (uint256) {
-        return ASSET.balanceOf(address(this));
+    function getAssetBalance(address user) public view returns (uint256) {
+        return ASSET.balanceOf(user);
     }
 
     /**
      * @return Pending rewards
      */
-    function getPendingRewards() public view returns (uint256) {
-        return INCENTIVES.getRewardsBalance(getSupplyAndBorrowAssets(), address(this));
+    function getPendingRewards(address user) public view returns (uint256) {
+        return INCENTIVES.getRewardsBalance(getSupplyAndBorrowAssets(), user);
     }
 
     /**
      * Position data from Aave
      */
-    function getPositionData()
+    function getPositionData(address user)
         public
         view
         returns (
@@ -111,7 +111,7 @@ contract AaveLoop is ImmutableOwnable {
             uint256 healthFactor
         )
     {
-        return LENDING_POOL.getUserAccountData(address(this));
+        return LENDING_POOL.getUserAccountData(user);
     }
 
     /**
@@ -128,57 +128,49 @@ contract AaveLoop is ImmutableOwnable {
      * Claims and transfers all pending rewards to OWNER
      */
     function claimRewardsToOwner() external {
-        INCENTIVES.claimRewards(getSupplyAndBorrowAssets(), type(uint256).max, OWNER);
+        INCENTIVES.claimRewards(getSupplyAndBorrowAssets(), type(uint256).max, msg.sender);
     }
 
     // ---- main ----
 
     /**
-     * @param iterations - Loop count
-     * @return Liquidity at end of the loop
-     */
-    function enterPositionFully(uint256 iterations) external onlyOwner returns (uint256) {
-        return enterPosition(ASSET.balanceOf(msg.sender), iterations);
-    }
-
-    /**
      * @param principal - ASSET transferFrom sender amount, can be 0
-     * @param iterations - Loop count
      * @return Liquidity at end of the loop
      */
-    function enterPosition(uint256 principal, uint256 iterations) public onlyOwner returns (uint256) {
-        if (principal > 0) {
-            ASSET.safeTransferFrom(msg.sender, address(this), principal);
+    function enterPosition(uint256 principal, address user, uint256 iterations) public returns (uint256) {
+
+        if (getAssetBalance(msg.sender) > 0) {
+            _supply(principal, user);
         }
 
-        if (getAssetBalance() > 0) {
-            _supply(getAssetBalance());
-        }
-
-        for (uint256 i = 0; i < iterations; i++) {
-            _borrow(getLiquidity() - SAFE_BUFFER);
-            _supply(getAssetBalance());
-        }
-
-        return getLiquidity();
+        // for (uint256 i = 0; i < iterations;) {
+        //     _borrow(getLiquidity(msg.sender) - SAFE_BUFFER);
+        //     _supply(getAssetBalance(msg.sender));
+        //     unchecked {
+        //         ++i;
+        //     }
+        // }
+        return 1;
+            // return getLiquidity(msg.sender);
     }
 
     /**
      * @param iterations - MAX loop count
      * @return Withdrawn amount of ASSET to OWNER
      */
-    function exitPosition(uint256 iterations) external onlyOwner returns (uint256) {
-        (, , , , uint256 ltv, ) = getPositionData(); // 4 decimals
+    function exitPosition(uint256 iterations) external returns (uint256) {
+        (, , , , uint256 ltv, ) = getPositionData(msg.sender); // 4 decimals
 
-        for (uint256 i = 0; i < iterations && getBorrowBalance() > 0; i++) {
-            _redeemSupply(((getLiquidity() * 1e4) / ltv) - SAFE_BUFFER);
-            _repayBorrow(getAssetBalance());
+        for (uint256 i = 0; i < iterations && getBorrowBalance(msg.sender) > 0;) {
+            _redeemSupply(((getLiquidity(msg.sender) * 1e4) / ltv) - SAFE_BUFFER);
+            _repayBorrow(getAssetBalance(msg.sender));
+            unchecked {
+                ++i;
+            }
         }
 
-        if (getBorrowBalance() == 0) {
-            _redeemSupply(type(uint256).max);
-        }
-
+        if (getBorrowBalance(msg.sender) == 0) _redeemSupply(type(uint256).max);
+        
         return _withdrawToOwner(address(ASSET));
     }
 
@@ -187,23 +179,22 @@ contract AaveLoop is ImmutableOwnable {
     /**
      * amount in ASSET
      */
-    function _supply(uint256 amount) public onlyOwner {
-        ASSET.safeIncreaseAllowance(address(LENDING_POOL), amount);
-        LENDING_POOL.deposit(address(ASSET), amount, address(this), 0);
+    function _supply(uint256 principal, address user)  public  {
+        LENDING_POOL.deposit(address(ASSET), principal, user, 0);
     }
 
     /**
      * amount in ASSET
      */
-    function _borrow(uint256 amount) public onlyOwner {
-        LENDING_POOL.borrow(address(ASSET), amount, USE_VARIABLE_DEBT, 0, address(this));
+    function _borrow(uint256 amount) public {
+        LENDING_POOL.borrow(address(ASSET), amount, USE_VARIABLE_DEBT, 0, msg.sender);
     }
 
     /**
      * amount in ASSET
      */
-    function _redeemSupply(uint256 amount) public onlyOwner {
-        LENDING_POOL.withdraw(address(ASSET), amount, address(this));
+    function _redeemSupply(uint256 amount) public {
+        LENDING_POOL.withdraw(address(ASSET), amount, msg.sender);
     }
 
     /**
@@ -211,22 +202,22 @@ contract AaveLoop is ImmutableOwnable {
      */
     function _repayBorrow(uint256 amount) public onlyOwner {
         ASSET.safeIncreaseAllowance(address(LENDING_POOL), amount);
-        LENDING_POOL.repay(address(ASSET), amount, USE_VARIABLE_DEBT, address(this));
+        LENDING_POOL.repay(address(ASSET), amount, USE_VARIABLE_DEBT, msg.sender);
     }
 
-    function _withdrawToOwner(address asset) public onlyOwner returns (uint256) {
-        uint256 balance = ERC20(asset).balanceOf(address(this));
-        ERC20(asset).safeTransfer(OWNER, balance);
+    function _withdrawToOwner(address asset) public returns (uint256) {
+        uint256 balance = ERC20(asset).balanceOf(msg.sender);
+        ERC20(asset).safeTransfer(msg.sender, balance);
         return balance;
     }
 
-    // ---- emergency ----
+    // // ---- emergency ----
 
-    function emergencyFunctionCall(address target, bytes memory data) external onlyOwner {
-        Address.functionCall(target, data);
-    }
+    // function emergencyFunctionCall(address target, bytes memory data) external onlyOwner {
+    //     Address.functionCall(target, data);
+    // }
 
-    function emergencyFunctionDelegateCall(address target, bytes memory data) external onlyOwner {
-        Address.functionDelegateCall(target, data);
-    }
+    // function emergencyFunctionDelegateCall(address target, bytes memory data) external onlyOwner {
+    //     Address.functionDelegateCall(target, data);
+    // }
 }
