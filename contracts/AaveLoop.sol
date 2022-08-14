@@ -74,6 +74,10 @@ contract AaveLoop is ImmutableOwnable {
         return (totalDebtETH * (10**ASSET.decimals())) / getAssetPrice();
     }
 
+    function setReservesAsCollateral(address asset) public {
+        return LENDING_POOL.setUserUseReserveAsCollateral(asset, true);
+    }
+
     /**
      * @return available liquidity in ASSET
      */
@@ -139,9 +143,9 @@ contract AaveLoop is ImmutableOwnable {
      */
     function enterPosition(uint256 principal, address user, uint256 iterations) public returns (uint256) {
 
-        if (getAssetBalance(msg.sender) > 0) {
-            _supply(principal, user);
-        }
+        // if (getAssetBalance(msg.sender) > 0) {
+        //     _supply(principal, user);
+        // }
 
         // for (uint256 i = 0; i < iterations;) {
         //     _borrow(getLiquidity(msg.sender) - SAFE_BUFFER);
@@ -179,8 +183,8 @@ contract AaveLoop is ImmutableOwnable {
     /**
      * amount in ASSET
      */
-    function _supply(uint256 principal, address user)  public  {
-        LENDING_POOL.deposit(address(ASSET), principal, user, 0);
+    function _supply(address asset, uint256 principal, address user) public {
+        LENDING_POOL.deposit(asset, principal, user, 0);
     }
 
     /**

@@ -17,6 +17,7 @@ contract Loop is Test {
     // @notice          erc721 is an ERC721
 
     IERC20 IAAVE;
+
     ILendingPool LendingPool;
     uint256 totalCollateralETH;
     uint256 totalDebtETH;
@@ -34,11 +35,6 @@ contract Loop is Test {
     address EVE = vm.addr(EVE_PK);
 
     function setUp() public {
-        // address owner,
-        // address asset,
-        // address lendingPool,
-        // address incentives
-        // Deploy contracts
         // erc20 = new MockERC20("DAI", "DAI", 18);
         // erc20two = new MockERC20("CNV", "CNV", 18);
         IAAVE = IERC20(0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9);
@@ -72,27 +68,28 @@ contract Loop is Test {
         emit log_string("aTokenAddress = supply asset | variableDebtTokenAddress = borrow asset");
         emit log_address(assetPrice[0]);
         emit log_address(assetPrice[1]);
+        emit log_address(address(looper));
         assertEq(true, true);
     }
 
     function testGetPositionData() public {
+        uint256 assetPrice = looper.getAssetPrice();
+
         address RichDudeAddy = address(0xddfAbCdc4D8FfC6d5beaf154f18B778f892A0740);
         uint256 RichBalance = IAAVE.balanceOf(RichDudeAddy);
         vm.startPrank(RichDudeAddy);
-        
-        // IAAVE.approve(BOB, 100 ether);
-        // vm.startPrank(BOB);
-        // IAAVE.transfer(address(0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9), 1 ether);
-        // // Move AAVE into BOBs wallet, 
-        // // BOB enters aave position with 100 eth worth of AAVE
-        // emit log_string("Liquidity");
-        // // emit log_uint(liquidity);
-        // // // Position should update;
-        // IAAVE.approve(address(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9), 10 ether);
-        IAAVE.approve(address(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9), 100 ether);
-        // looper._supply(1 ether, RichDudeAddy);
-        LendingPool.deposit(address(0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9), 1e18, RichDudeAddy, 0);
+        // Rich Dude approves lending pool
+        IAAVE.approve(address(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9), 100000 ether);
+        // Rich dude approves looper
+        // IAAVE.approve(address(0xCe71065D4017F316EC606Fe4422e11eB2c47c246), 100000 ether);      
+        // low level call failure wtf?  
+        // looper._supply(address(0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9),1000 ether, RichDudeAddy);,
+        LendingPool.deposit(address(0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9), 10_000 ether, RichDudeAddy, 0);
+
         (totalCollateralETH,totalDebtETH,availableBorrowsETH,currentLiquidationThreshold,ltv,healthFactor) = looper.getPositionData(RichDudeAddy); 
+        LendingPool.borrow(address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48), availableBorrowsETH * (100*10**6) / assetPrice, 1, 0, RichDudeAddy);
+        // LendingPool.withdraw(address(0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9), 100000000000000000000, RichDudeAddy, 0);
+
         emit log_string("Get Position Data for User");
         emit log_uint(totalCollateralETH);
         emit log_uint(totalDebtETH);
